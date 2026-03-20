@@ -1,5 +1,5 @@
 import { createOpenAI } from '@ai-sdk/openai';
-import { streamText } from 'ai';
+import { streamText, createUIMessageStreamResponse } from 'ai';
 import { supabase } from '@/lib/supabase';
 import { generateEmbedding } from '@/lib/embeddings';
 
@@ -85,7 +85,9 @@ export async function POST(req: Request) {
       system: systemPrompt,
     });
 
-    return result.toTextStreamResponse();
+    return createUIMessageStreamResponse({
+      stream: result.toUIMessageStream(),
+    });
   } catch (error) {
     console.error('Error en chat:', error);
     return new Response('Error procesando mensaje', { status: 500 });
