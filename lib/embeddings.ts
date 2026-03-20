@@ -8,11 +8,12 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   const apiKey = process.env.HUGGINGFACE_API_KEY;
 
   const response = await fetch(
-    `https://router.huggingface.co/hf-inference/pipeline/feature-extraction/${HF_MODEL}`,
+    `https://router.huggingface.co/hf-inference/models/${HF_MODEL}`,
     {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'x-task': 'feature-extraction',
         ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
       },
       body: JSON.stringify({

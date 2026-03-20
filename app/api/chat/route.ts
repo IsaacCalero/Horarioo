@@ -80,7 +80,7 @@ export async function POST(req: Request) {
     }
 
     const result = await streamText({
-      model: groq('llama3-8b-8192'),
+      model: groq('llama-3.1-8b-instant'),
       messages: modelMessages,
       system: systemPrompt,
     });
