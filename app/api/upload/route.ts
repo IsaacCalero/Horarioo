@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import * as pdf from 'pdf-parse';
+import { PDFParse } from 'pdf-parse';
 import { supabase } from '@/lib/supabase';
 import { generateEmbedding, chunkText } from '@/lib/embeddings';
 
@@ -18,8 +18,12 @@ export async function POST(req: Request) {
 
     // 1. Extraer texto del PDF
     const buffer = Buffer.from(await file.arrayBuffer());
-    const pdfData = await pdf(buffer);
-    const fullText = pdfData.text;
+    const parser = new PDFParse({ data: buffer });
+    const pdfText = await parser.getText();
+    await parser.destroy();
+
+    const fullText = pdfText.text;
+    const totalPages = pdfText.total;
 
     // 2. Guardar documento en Supabase
     const { data: doc, error: docError } = await supabase
@@ -27,7 +31,7 @@ export async function POST(req: Request) {
       .insert({
         student_id: studentId,
         filename: file.name,
-        metadata: { pages: pdfData.numpages },
+        metadata: { pages: totalPages },
       })
       .select()
       .single();
@@ -50,7 +54,7 @@ export async function POST(req: Request) {
       const chunk = chunks[i];
       
       // Estimar página (aproximado)
-      const pageNumber = Math.floor((i * 500) / (pdfData.numpages * 200)) + 1;
+      const pageNumber = Math.floor((i * 500) / (Math.max(totalPages, 1) * 200)) + 1;
 
       const { data: chunkData, error: chunkError } = await supabase
         .from('document_chunks')
@@ -90,7 +94,7 @@ export async function POST(req: Request) {
       success: true,
       documentId: doc.id,
       filename: file.name,
-      pages: pdfData.numpages,
+      pages: totalPages,
       chunks: chunks.length,
       embeddingsGenerated: embeddingRecords.length,
     });

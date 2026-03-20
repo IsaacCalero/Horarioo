@@ -9,12 +9,12 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@ai-sdk/react": "^2.0.116",
     "@ai-sdk/openai": "^3.0.41",
     "@supabase/supabase-js": "^2.43.0",
     "ai": "^6.0.116",
     "lucide-react": "^0.577.0",
     "next": "16.2.0",
-    "openai": "^4.52.0",
     "pdf-parse": "^2.4.5",
     "react": "19.2.4",
     "react-dom": "19.2.4"

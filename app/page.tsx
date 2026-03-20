@@ -1,14 +1,15 @@
 'use client';
 
-import { useChat } from 'ai/react';
+import { useChat } from '@ai-sdk/react';
 import { Calendar, BookOpen, Send, Upload, Trash2 } from 'lucide-react';
 import { useState, useRef } from 'react';
 
 export default function TutorPage() {
-  const { messages, input, handleInputChange, handleSubmit, setMessages } = useChat();
+  const { messages, sendMessage, status } = useChat();
+  const [input, setInput] = useState('');
   const [documents, setDocuments] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [studentId] = useState('student-001'); // TODO: Reemplazar con auth real
+  const [studentId] = useState('00000000-0000-0000-0000-000000000001'); // TODO: Reemplazar con auth real
   const [showSchedule, setShowSchedule] = useState(false);
   const [schedules, setSchedules] = useState<any[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -43,20 +44,30 @@ export default function TutorPage() {
     }
   };
 
-  const handleChatSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleChatSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    
-    // Enviar studentId junto al mensaje
-    fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: [...messages, { role: 'user', content: input }],
-        studentId,
-      }),
-    });
 
-    handleSubmit(e);
+    const text = input.trim();
+    if (!text) return;
+
+    await sendMessage(
+      { text },
+      {
+        body: { studentId },
+      }
+    );
+    setInput('');
+  };
+
+  const getMessageText = (message: any) => {
+    if (Array.isArray(message.parts)) {
+      return message.parts
+        .filter((part: any) => part.type === 'text')
+        .map((part: any) => part.text)
+        .join('');
+    }
+
+    return message.content ?? '';
   };
 
   return (
@@ -160,7 +171,7 @@ export default function TutorPage() {
                   <div className={`text-xs font-bold mb-1 ${m.role === 'user' ? 'text-blue-100' : 'text-gray-600'}`}>
                     {m.role === 'user' ? 'Tú' : 'Tutor IA'}
                   </div>
-                  <div className="text-sm">{m.content}</div>
+                  <div className="text-sm">{getMessageText(m)}</div>
                 </div>
               </div>
             ))
@@ -174,15 +185,17 @@ export default function TutorPage() {
         >
           <input
             value={input}
-            onChange={handleInputChange}
+            onChange={(e) => setInput(e.target.value)}
             placeholder="Escribe tu pregunta o resumen..."
             className="flex-1 p-3 outline-none bg-gray-50 rounded-lg border border-gray-200 
                       focus:border-blue-400 focus:bg-white transition"
+            disabled={status !== 'ready'}
           />
           <button
             type="submit"
             className="bg-blue-600 text-white p-3 rounded-lg hover:bg-blue-700 
                       transition flex items-center gap-2 font-medium"
+            disabled={status !== 'ready'}
           >
             <Send size={18} /> Enviar
           </button>

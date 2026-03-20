@@ -1,21 +1,58 @@
-import OpenAI from 'openai';
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const HF_MODEL = 'sentence-transformers/all-MiniLM-L6-v2';
 
 /**
- * Genera un embedding de 1536 dimensiones para un texto
- * Usa OpenAI text-embedding-3-small (eficiente y rápido)
+ * Genera un embedding de 384 dimensiones para un texto
+ * usando la API de inferencia gratuita de Hugging Face.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const response = await openai.embeddings.create({
-    model: 'text-embedding-3-small',
-    input: text,
-    encoding_format: 'float',
-  });
+  const apiKey = process.env.HUGGINGFACE_API_KEY;
 
-  return response.data[0].embedding;
+  const response = await fetch(
+    `https://api-inference.huggingface.co/pipeline/feature-extraction/${HF_MODEL}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+      },
+      body: JSON.stringify({
+        inputs: text,
+        options: { wait_for_model: true },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`Hugging Face inference error (${response.status}): ${details}`);
+  }
+
+  const data = await response.json();
+
+  // La salida puede ser vector 1D o matriz token x dimension.
+  if (Array.isArray(data) && typeof data[0] === 'number') {
+    return data as number[];
+  }
+
+  if (Array.isArray(data) && Array.isArray(data[0])) {
+    const tokenEmbeddings = data as number[][];
+    const dim = tokenEmbeddings[0]?.length ?? 0;
+
+    if (dim === 0) {
+      throw new Error('Hugging Face devolvio un embedding vacio.');
+    }
+
+    const pooled = new Array(dim).fill(0);
+    for (const tokenVec of tokenEmbeddings) {
+      for (let i = 0; i < dim; i++) {
+        pooled[i] += tokenVec[i] ?? 0;
+      }
+    }
+
+    return pooled.map((v) => v / tokenEmbeddings.length);
+  }
+
+  throw new Error('Formato de embedding no reconocido en respuesta de Hugging Face.');
 }
 
 /**

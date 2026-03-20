@@ -18,7 +18,7 @@ async function searchRelevantChunks(query: string, studentId: string, limit: num
     // Búsqueda vectorial: encontrar chunks similares
     const { data, error } = await supabase.rpc('match_documents', {
       query_embedding: queryEmbedding,
-      match_threshold: 0.7,
+      match_threshold: 0.45,
       match_count: limit,
       student_id: studentId,
     });
