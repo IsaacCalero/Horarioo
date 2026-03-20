@@ -1,55 +1,33 @@
+import { HfInference } from '@huggingface/inference';
+
 const HF_MODEL = 'sentence-transformers/all-MiniLM-L6-v2';
 
 /**
  * Genera un embedding de 384 dimensiones para un texto
- * usando la API de inferencia gratuita de Hugging Face.
+ * usando el SDK oficial de Hugging Face (featureExtraction).
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const apiKey = process.env.HUGGINGFACE_API_KEY;
+  const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
 
-  const response = await fetch(
-    `https://router.huggingface.co/hf-inference/models/${HF_MODEL}`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-task': 'feature-extraction',
-        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-      },
-      body: JSON.stringify({
-        inputs: text,
-        options: { wait_for_model: true },
-      }),
-    }
-  );
+  const result = await hf.featureExtraction({
+    model: HF_MODEL,
+    inputs: text,
+  });
 
-  if (!response.ok) {
-    const details = await response.text();
-    throw new Error(`Hugging Face inference error (${response.status}): ${details}`);
+  // featureExtraction puede devolver vector 1D o matriz [tokens x dims]
+  if (Array.isArray(result) && typeof result[0] === 'number') {
+    return result as number[];
   }
 
-  const data = await response.json();
-
-  // La salida puede ser vector 1D o matriz token x dimension.
-  if (Array.isArray(data) && typeof data[0] === 'number') {
-    return data as number[];
-  }
-
-  if (Array.isArray(data) && Array.isArray(data[0])) {
-    const tokenEmbeddings = data as number[][];
+  if (Array.isArray(result) && Array.isArray(result[0])) {
+    // Mean pooling sobre tokens
+    const tokenEmbeddings = result as number[][];
     const dim = tokenEmbeddings[0]?.length ?? 0;
-
-    if (dim === 0) {
-      throw new Error('Hugging Face devolvio un embedding vacio.');
-    }
-
+    if (dim === 0) throw new Error('Hugging Face devolvió un embedding vacío.');
     const pooled = new Array(dim).fill(0);
     for (const tokenVec of tokenEmbeddings) {
-      for (let i = 0; i < dim; i++) {
-        pooled[i] += tokenVec[i] ?? 0;
-      }
+      for (let i = 0; i < dim; i++) pooled[i] += tokenVec[i] ?? 0;
     }
-
     return pooled.map((v) => v / tokenEmbeddings.length);
   }
 
