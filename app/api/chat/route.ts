@@ -52,8 +52,16 @@ export async function POST(req: Request) {
       return new Response('No hay mensajes', { status: 400 });
     }
 
+    // Convertir UIMessages (formato @ai-sdk/react con parts) a ModelMessages (content string)
+    const modelMessages = messages.map((msg: any) => {
+      const text = Array.isArray(msg.parts)
+        ? msg.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('')
+        : (msg.content ?? '');
+      return { role: msg.role as 'user' | 'assistant', content: text };
+    });
+
     // Obtener último mensaje del usuario para buscar contexto
-    const lastMessage = messages[messages.length - 1];
+    const lastMessage = modelMessages[modelMessages.length - 1];
     const userQuery = lastMessage?.content || '';
 
     // Buscar chunks relevantes del material del profesor
@@ -73,7 +81,7 @@ export async function POST(req: Request) {
 
     const result = await streamText({
       model: groq('llama3-8b-8192'),
-      messages,
+      messages: modelMessages,
       system: systemPrompt,
     });
 
