@@ -8,27 +8,62 @@ import { useRouter } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+type ReportErrorResponse = {
+  success: boolean;
+  error?: string;
+  fallbackMailto?: string;
+};
+
+type UploadedDocument = {
+  filename: string;
+  pages: number;
+  chunks: number;
+  embeddingsGenerated?: number;
+};
+
+type UploadResponse = {
+  success: boolean;
+  filename?: string;
+  pages?: number;
+  chunks?: number;
+  embeddingsGenerated?: number;
+  error?: string;
+};
+
+type StoredMessage = {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content?: string;
+  parts?: Array<{ type?: string; text?: string }>;
+};
+
 export default function ChatPage() {
   const studentId = '00000000-0000-0000-0000-000000000001';
   const chatStorageKey = `tutor-medicina-chat-${studentId}`;
   const chatBackupKey = `tutor-medicina-chat-backup-${studentId}`;
   const { messages, sendMessage, status, setMessages } = useChat();
+  const typedMessages = messages as unknown as StoredMessage[];
   const [input, setInput] = useState('');
-  const [documents, setDocuments] = useState<any[]>([]);
+  const [documents, setDocuments] = useState<UploadedDocument[]>([]);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [chatHydrated, setChatHydrated] = useState(false);
-  const [recoverableMessages, setRecoverableMessages] = useState<any[]>([]);
+  const [recoverableMessages, setRecoverableMessages] = useState<StoredMessage[]>([]);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [errorDescription, setErrorDescription] = useState('');
+  const [errorScreenshot, setErrorScreenshot] = useState<string | null>(null);
+  const reportImageInputRef = useRef<HTMLInputElement>(null);
+  const [submittingReport, setSubmittingReport] = useState(false);
 
   useEffect(() => {
     try {
       const stored = localStorage.getItem(chatStorageKey);
       if (stored) {
-        const parsed = JSON.parse(stored);
+        const parsed: unknown = JSON.parse(stored);
         if (Array.isArray(parsed)) {
-          setRecoverableMessages(parsed);
+          setRecoverableMessages(parsed as StoredMessage[]);
           localStorage.setItem(chatBackupKey, stored);
         }
       }
@@ -63,9 +98,17 @@ export default function ChatPage() {
         body: formData,
       });
 
-      const data = await response.json();
+      const data: UploadResponse = await response.json();
       if (data.success) {
-        setDocuments([...documents, data]);
+        setDocuments((prev) => [
+          ...prev,
+          {
+            filename: data.filename ?? 'archivo.pdf',
+            pages: data.pages ?? 0,
+            chunks: data.chunks ?? 0,
+            embeddingsGenerated: data.embeddingsGenerated,
+          },
+        ]);
         alert(`✅ ${data.filename} subido (${data.chunks} chunks, ${data.embeddingsGenerated} embeddings)`);
       } else {
         alert(`❌ Error: ${data.error}`);
@@ -86,18 +129,20 @@ export default function ChatPage() {
     setInput('');
   };
 
-  const getMessageText = (message: any) => {
-    if (Array.isArray(message.parts)) {
-      return message.parts
-        .filter((part: any) => part.type === 'text')
-        .map((part: any) => part.text)
+  const getMessageText = (message: StoredMessage) => {
+    const parts = message.parts;
+    if (Array.isArray(parts)) {
+      return parts
+        .filter((part) => part.type === 'text')
+        .map((part) => part.text ?? '')
         .join('');
     }
+
     return message.content ?? '';
   };
 
   const handleDownloadSummaryPdf = async () => {
-    if (messages.length === 0) {
+    if (typedMessages.length === 0) {
       alert('No hay mensajes para exportar.');
       return;
     }
@@ -129,7 +174,7 @@ export default function ChatPage() {
     addLine(`Generado: ${new Date().toLocaleString()}`, 10);
     y += 8;
 
-    messages.forEach((m: any, index: number) => {
+    typedMessages.forEach((m, index) => {
       const role = m.role === 'user' ? 'Usuario' : 'Tutor IA';
       const content = getMessageText(m) || '(sin contenido)';
       addLine(`${index + 1}. ${role}`, 11, true);
@@ -142,17 +187,92 @@ export default function ChatPage() {
 
   const handleRecoverChat = () => {
     if (recoverableMessages.length === 0) return;
-    setMessages(recoverableMessages);
+    setMessages(recoverableMessages as unknown as typeof messages);
     localStorage.setItem(chatStorageKey, JSON.stringify(recoverableMessages));
   };
 
   const handleNewChat = () => {
     if (messages.length > 0) {
       localStorage.setItem(chatBackupKey, JSON.stringify(messages));
-      setRecoverableMessages(messages);
+      setRecoverableMessages(messages as unknown as StoredMessage[]);
     }
     setMessages([]);
     localStorage.removeItem(chatStorageKey);
+  };
+
+  const handleScreenshotFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Solo se permiten imagenes para el adjunto.');
+      e.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : null;
+      setErrorScreenshot(result);
+    };
+    reader.onerror = () => {
+      alert('No se pudo leer la imagen seleccionada.');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const resetReportForm = () => {
+    setErrorDescription('');
+    setErrorScreenshot(null);
+    if (reportImageInputRef.current) {
+      reportImageInputRef.current.value = '';
+    }
+  };
+
+  const handleReportError = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    if (!errorDescription.trim()) {
+      alert('Describe el error antes de enviar el reporte.');
+      return;
+    }
+
+    setSubmittingReport(true);
+    try {
+      const response = await fetch('/api/report-error', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          description: errorDescription,
+          screenshot: errorScreenshot,
+          page: window.location.href,
+          userAgent: navigator.userAgent,
+        }),
+      });
+
+      const data: ReportErrorResponse = await response.json();
+
+      if (!response.ok || !data.success) {
+        if (data.fallbackMailto) {
+          const openMail = confirm('No se pudo enviar automáticamente. ¿Quieres abrir tu correo para enviarlo manualmente?');
+          if (openMail) {
+            window.location.href = data.fallbackMailto;
+          }
+        }
+        alert(data.error ?? 'No se pudo enviar el reporte.');
+        return;
+      }
+
+      alert('Reporte enviado. Gracias por ayudar a mejorar la app.');
+      resetReportForm();
+      setReportOpen(false);
+    } catch {
+      alert('Error de red al enviar el reporte.');
+    } finally {
+      setSubmittingReport(false);
+    }
   };
 
   return (
@@ -290,11 +410,18 @@ export default function ChatPage() {
             <span className="hidden sm:inline">Nuevo chat</span>
             <span className="sm:hidden">Nuevo</span>
           </button>
+          <button
+            onClick={() => setReportOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 transition text-xs sm:text-sm font-semibold"
+            type="button"
+          >
+            Reportar error
+          </button>
         </header>
 
         {/* Mensajes */}
         <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-4 sm:py-6 space-y-4">
-          {chatHydrated && messages.length === 0 && recoverableMessages.length > 0 && (
+          {chatHydrated && typedMessages.length === 0 && recoverableMessages.length > 0 && (
             <div className="flex justify-center">
               <button
                 onClick={handleRecoverChat}
@@ -306,7 +433,7 @@ export default function ChatPage() {
             </div>
           )}
 
-          {messages.length === 0 ? (
+          {typedMessages.length === 0 ? (
             <div className="h-full flex items-center justify-center text-center">
               <div>
                 <div className="w-16 h-16 bg-white rounded-3xl flex items-center justify-center shadow-md mx-auto mb-4 border border-purple-100">
@@ -317,7 +444,7 @@ export default function ChatPage() {
               </div>
             </div>
           ) : (
-            messages.map((m: any) => (
+            typedMessages.map((m) => (
               <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div
                   className={`max-w-[85%] sm:max-w-lg rounded-3xl px-4 sm:px-5 py-3 sm:py-4 ${
@@ -375,6 +502,86 @@ export default function ChatPage() {
           </button>
         </form>
       </div>
+
+      {reportOpen && (
+        <div className="fixed inset-0 z-40 bg-black/50 p-4 sm:p-8 flex items-center justify-center">
+          <div className="w-full max-w-xl bg-white rounded-3xl shadow-2xl border border-purple-100 p-5 sm:p-6">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h2 className="text-lg font-bold text-purple-900">Reportar un error</h2>
+                <p className="text-sm text-gray-500 mt-1">Dime que pasó detallando el error que te ocurrió y envíame una captura para ayudarte con el error.</p>
+              </div>
+              <button
+                onClick={() => setReportOpen(false)}
+                type="button"
+                className="text-gray-400 hover:text-gray-600 transition"
+                aria-label="Cerrar reporte"
+              >
+                <XIcon size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleReportError} className="space-y-3">
+              <textarea
+                value={errorDescription}
+                onChange={(e) => setErrorDescription(e.target.value)}
+                placeholder="Descríbeme el error y qué estabas haciendo"
+                rows={4}
+                className="w-full p-3 rounded-xl border border-purple-100 focus:outline-none focus:ring-2 focus:ring-purple-100 focus:border-purple-400 text-sm text-gray-900 placeholder:text-gray-400 resize-none"
+                required
+              />
+
+              <div className="rounded-2xl border border-purple-100 bg-purple-50/60 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="px-3 py-2 rounded-xl bg-white border border-purple-200 text-purple-700 hover:bg-purple-100 transition text-sm font-semibold cursor-pointer">
+                    Adjuntar imagen de captura
+                    <input
+                      ref={reportImageInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleScreenshotFileChange}
+                    />
+                  </label>
+                  {errorScreenshot && (
+                    <span className="text-xs text-emerald-700 font-semibold">Captura adjunta</span>
+                  )}
+                </div>
+                {errorScreenshot && (
+                  <Image
+                    src={errorScreenshot}
+                    alt="Vista previa de captura de error"
+                    width={640}
+                    height={240}
+                    unoptimized
+                    className="mt-3 rounded-xl border border-purple-200 w-full max-h-44 object-cover"
+                  />
+                )}
+              </div>
+
+              <div className="flex flex-wrap justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetReportForm();
+                    setReportOpen(false);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-white border border-purple-200 text-purple-700 hover:bg-purple-50 transition text-sm font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingReport}
+                  className="px-4 py-2 rounded-xl bg-purple-600 text-white hover:bg-purple-700 transition text-sm font-semibold disabled:opacity-60"
+                >
+                  {submittingReport ? 'Enviando...' : 'Enviar reporte'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

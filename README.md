@@ -16,6 +16,27 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Reporte de errores por correo
+
+La pantalla de chat incluye un boton de Reportar error que permite:
+
+- Escribir descripcion del problema.
+- Adjuntar captura de pantalla.
+- Enviar el reporte por correo desde la API `POST /api/report-error`.
+
+Configura estas variables en `.env.local`:
+
+```bash
+SUPPORT_EMAIL_TO=soporte@tu-dominio.com
+SMTP_HOST=smtp.tu-proveedor.com
+SMTP_PORT=587
+SMTP_USER=usuario_smtp
+SMTP_PASS=clave_smtp
+SMTP_FROM="Tutor Medicina <no-reply@tu-dominio.com>"
+```
+
+Si falta configuracion SMTP, la app ofrece abrir un `mailto:` como respaldo.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
