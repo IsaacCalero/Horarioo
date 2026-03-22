@@ -16,6 +16,7 @@
     "@supabase/supabase-js": "^2.43.0",
     "ai": "^6.0.116",
     "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.577.0",
     "next": "16.2.0",
     "nodemailer": "^7.0.7",
@@ -28,8 +29,8 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/nodemailer": "^7.0.3",
     "@types/node": "^20",
+    "@types/nodemailer": "^7.0.3",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
